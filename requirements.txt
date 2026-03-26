@@ -2,3 +2,4 @@ websockets
 aiohttp
 asyncpg
 python-dotenv
+python-dotenv

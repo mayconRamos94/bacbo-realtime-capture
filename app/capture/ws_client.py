@@ -1,24 +1,31 @@
 import asyncio
 import websockets
-from app.processor.event_processor import process_event
-from app.utils.logger import log
 
-WS_URL = "wss://atlasbr.evo-games.com/public/bacbo/player/game/PorBacBo00000001/socket?messageFormat=json&EVOSESSIONID=tut2cyqzqu6bj5dktuu7jk6k4tec6ztr39af0376596f882032bafd85d06f3b5a3a6c673eada50860&client_version=6.20260326.73542.60686-721617f594-r2&instance=syi4tt-tut2cyqzqu6bj5dk-PorBacBo00000001"
+from app.domain.event_processor import EventProcessor
+from app.utils.logger import get_logger
+from app.config.settings import WS_URL
+
+
+logger = get_logger(__name__)
 
 RECONNECT_DELAY = 5
 HEARTBEAT_TIMEOUT = 10
 
+
 async def start_websocket():
+    processor = EventProcessor()
+
     while True:
         try:
-            log("Conectando ao WebSocket...")
+            logger.info("Connecting to WebSocket...")
 
             async with websockets.connect(
                 WS_URL,
                 ping_interval=5,
                 ping_timeout=10
             ) as ws:
-                log("Conectado! Iniciando captura de eventos...")
+
+                logger.info("Connected. Listening for events...")
 
                 while True:
                     try:
@@ -27,14 +34,18 @@ async def start_websocket():
                             timeout=HEARTBEAT_TIMEOUT
                         )
 
-                        process_event(message)
+                        await processor.process_event(message)
 
                     except asyncio.TimeoutError:
-                        log("Heartbeat não recebido. Conexão possivelmente interrompida.")
+                        logger.warning("Heartbeat timeout. Reconnecting...")
                         break
 
-        except Exception as e:
-            log(f"Erro na conexão: {e}")
+                    except websockets.ConnectionClosed:
+                        logger.warning("Connection closed. Reconnecting...")
+                        break
 
-        log(f"Reconectando automaticamente em {RECONNECT_DELAY}s...")
+        except Exception:
+            logger.exception("WebSocket connection error")
+
+        logger.info(f"Reconnecting in {RECONNECT_DELAY}s...")
         await asyncio.sleep(RECONNECT_DELAY)

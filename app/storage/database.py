@@ -13,7 +13,7 @@ async def init_db():
     global _pool
 
     if _pool is not None:
-        return  # evita recriar pool
+        return
 
     try:
         logger.info("Initializing database connection pool...")
@@ -31,6 +31,19 @@ async def init_db():
                     data JSONB,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+
+            await conn.execute("""
+                ALTER TABLE events
+                ADD COLUMN IF NOT EXISTS winner TEXT,
+                ADD COLUMN IF NOT EXISTS player_score INT,
+                ADD COLUMN IF NOT EXISTS banker_score INT,
+                ADD COLUMN IF NOT EXISTS event_timestamp BIGINT
+            """)
+
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS unique_event_idx
+                ON events (winner, player_score, banker_score)
             """)
 
         logger.info("Database initialized successfully")

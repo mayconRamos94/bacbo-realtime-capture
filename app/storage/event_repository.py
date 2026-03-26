@@ -27,13 +27,20 @@ async def save_event(data: dict):
 
         async with pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO events (data) VALUES ($1::jsonb)",
-                json.dumps(data)
+                """
+                INSERT INTO events (data, winner, player_score, banker_score, event_timestamp)
+                VALUES ($1::jsonb, $2, $3, $4, $5)
+                ON CONFLICT DO NOTHING
+                """,
+                json.dumps(data),
+                data.get("winner"),
+                data.get("playerScore"),
+                data.get("bankerScore"),
+                data.get("timestamp")
             )
 
         logger.info("Event saved successfully")
 
-        # 🔥 só envia se estiver configurado
         if ENDPOINT_URL:
             await send_to_endpoint(data)
 

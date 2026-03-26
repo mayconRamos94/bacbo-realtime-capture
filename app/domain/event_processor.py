@@ -11,7 +11,8 @@ logger = get_logger(__name__)
 class EventProcessor:
 
     def __init__(self):
-        self._last_timestamp = None
+        # controle correto de duplicidade
+        self._last_event = None
 
     async def process_event(self, raw_message: str):
         try:
@@ -25,12 +26,6 @@ class EventProcessor:
 
             timestamp = data.get("time")
 
-            # evita duplicidade
-            if timestamp == self._last_timestamp:
-                return
-
-            self._last_timestamp = timestamp
-
             history = data.get("args", {}).get("history", [])
             if not history:
                 return
@@ -43,6 +38,19 @@ class EventProcessor:
             if not result_data["winner"]:
                 logger.warning("Invalid event data (missing winner)")
                 return
+
+            # chave de deduplicação baseada no conteúdo
+            current_event = (
+                result_data["winner"],
+                result_data["playerScore"],
+                result_data["bankerScore"]
+            )
+
+            # evita duplicados reais
+            if current_event == self._last_event:
+                return
+
+            self._last_event = current_event
 
             logger.info(
                 f"RESULT -> {result_data['winner']} | "

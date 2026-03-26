@@ -1,14 +1,26 @@
+from fastapi import FastAPI
+import uvicorn
 import asyncio
 
+from app.api.routes import router as api_router
 from app.capture.ws_client import start_websocket
 from app.storage.database import init_db, close_db
 from app.utils.logger import setup_logger, get_logger
 
-# garante carregamento e validação do .env
+
 from app.config import settings
 
 
 logger = get_logger(__name__)
+
+app = FastAPI()
+app.include_router(api_router)
+
+
+async def start_api():
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 async def main():
@@ -18,8 +30,12 @@ async def main():
         logger.info("Initializing database...")
         await init_db()
 
-        logger.info("Starting WebSocket client...")
-        await start_websocket()
+        logger.info("Starting services (WebSocket + API)...")
+
+        await asyncio.gather(
+            start_websocket(),
+            start_api()
+        )
 
     except Exception:
         logger.exception("Application error")

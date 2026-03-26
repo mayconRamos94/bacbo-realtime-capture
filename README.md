@@ -1,49 +1,110 @@
 # BacBo Real-Time Capture Service
 
 ## Overview
-This service captures Bac Bo game events in real time via WebSocket, processes the data, and stores it for further analysis.
 
-The system is already running and being actively developed, with focus on low latency and data reliability.
+This service captures Bac Bo game events in real time via WebSocket, processes them, ensures data consistency, and exposes the results through an API.
 
 ---
 
 ## Features
+
 - Real-time event capture via WebSocket
-- Automatic reconnection and fault handling
-- Event processing and filtering
+- Automatic reconnection
+- Duplicate event prevention
 - PostgreSQL persistence
-- Structured data ready for analysis
+- API endpoints for data access
 
 ---
 
 ## Tech Stack
+
 - Python (asyncio)
 - WebSocket
+- FastAPI
 - PostgreSQL (asyncpg)
 
 ---
 
-## Current Status
-In progress
+## Project Structure
 
-Current capabilities:
-- Real-time capture working
-- Data persistence implemented
-- Stable connection handling
-
-Next steps:
-- API for data exposure
-- Pattern detection (streaks, trends)
-- Visualization layer
+app/
+  api/
+  capture/
+  domain/
+  storage/
+  config/
+  utils/
+main.py
 
 ---
 
-## Running Locally (Optional)
+## How to Run
 
-If you want to run the project locally:
+### 1. Create virtual environment
 
-```bash
 python -m venv venv
-source venv/Scripts/activate  # Windows (Git Bash)
+
+---
+
+### 2. Activate environment
+
+Windows (cmd/powershell):
+venv\Scripts\activate
+
+Git Bash:
+source venv/Scripts/activate
+
+---
+
+### 3. Install dependencies
+
 pip install -r requirements.txt
+
+---
+
+### 4. Configure environment
+
+Create a `.env` file based on `.env.example`
+
+Example:
+
+WS_URL=wss://...
+DATABASE_URL=postgresql://postgres:postgres@localhost:5440/bacbo
+ENDPOINT_URL=
+
+---
+
+### 5. Run the application
+
 python main.py
+
+---
+
+## API Endpoints
+
+### Health
+
+GET /health
+
+Response:
+{"status": "ok"}
+
+---
+
+### Results
+
+GET /results?limit=50
+
+Returns latest events
+
+---
+
+### Stats
+
+GET /stats?limit=100
+
+Returns aggregated data:
+- total
+- player wins
+- banker wins
+- win rates

@@ -11,6 +11,8 @@ logger = get_logger(__name__)
 
 async def send_to_endpoint(data: dict):
     try:
+        if not ENDPOINT_URL:
+            return
         async with aiohttp.ClientSession() as session:
             async with session.post(ENDPOINT_URL, json=data) as response:
                 if response.status >= 400:
@@ -23,7 +25,10 @@ async def save_event(data: dict):
     try:
         logger.info("Saving event...")
 
-        pool = get_pool()
+        try:
+            pool = get_pool()
+        except Exception:
+            return  # 👈 ignora se não tiver DB
 
         async with pool.acquire() as conn:
             await conn.execute(

@@ -40,71 +40,104 @@ main.py
 
 ## How to Run
 
-### 1. Create virtual environment
+🧩 Visão Geral
+
+O sistema funciona em 2 partes:
+
+Captura automática do WebSocket (mitmproxy)
+Processamento dos dados (backend Python)
+
+👉 A configuração abaixo é feita uma única vez
+
+🚀 1. Instalar dependências
+✅ Python
+Instalar Python 3.10+
+✅ Google Chrome
+Utilizado para acessar o jogo
+🚀 2. Instalar dependências do projeto
+
+No terminal, dentro da pasta do projeto:
 
 python -m venv venv
-
----
-
-### 2. Activate environment
-
-Windows (cmd/powershell):
 venv\Scripts\activate
-
-Git Bash:
-source venv/Scripts/activate
-
----
-
-### 3. Install dependencies
-
 pip install -r requirements.txt
+🚀 3. Configurar variáveis (.env)
 
----
+Criar arquivo .env:
 
-### 4. Configure environment
-
-Create a `.env` file based on `.env.example`
-
-Example:
-
-WS_URL=wss://...
-DATABASE_URL=postgresql://postgres:postgres@localhost:5440/bacbo
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DATABASE
 ENDPOINT_URL=
+🚀 4. Iniciar o capturador (mitmproxy)
 
----
+No terminal:
 
-### 5. Run the application
+mitmproxy -s mitm_script.py
+🔐 5. Configurar proxy no sistema (IMPORTANTE)
+
+👉 Essa etapa permite capturar a conexão do jogo
+
+No Windows:
+Abrir configurações de proxy
+Configurar proxy manual:
+Endereço: 127.0.0.1  
+Porta: 8080
+
+✔ salvar
+
+🔐 6. Instalar certificado (necessário para HTTPS)
+
+Com o mitmproxy rodando:
+
+Acessar no navegador:
+http://mitm.it
+Baixar o certificado para Windows
+Instalar:
+escolher Usuário Atual
+armazenar em:
+👉 "Autoridades de Certificação Raiz Confiáveis"
+
+✔ concluir instalação
+
+🚀 7. Capturar a sessão do jogo
+Abrir o navegador
+Acessar o site do cassino
+Fazer login
+Abrir o jogo Bac Bo
+
+👉 Nesse momento o sistema irá:
+
+detectar automaticamente o WebSocket
+salvar no arquivo ws_url.txt
+🚀 8. Rodar o backend
+
+Em outro terminal:
 
 python main.py
+📊 9. Verificar funcionamento
 
----
+Acessar no navegador:
 
-## API Endpoints
+http://localhost:8000/health
+http://localhost:8000/results
+http://localhost:8000/stats
+🔁 10. Teste de estabilidade (IMPORTANTE)
 
-### Health
+Para validar o funcionamento contínuo:
 
-GET /health
+Atualizar o jogo (F5)
+Ou fechar e abrir novamente
 
-Response:
-{"status": "ok"}
+👉 O sistema deve:
 
----
-
-### Results
-
-GET /results?limit=50
-
-Returns latest events
-
----
-
-### Stats
-
-GET /stats?limit=100
-
-Returns aggregated data:
-- total
-- player wins
-- banker wins
-- win rates
+capturar nova sessão automaticamente
+reconectar
+continuar recebendo dados
+✅ Resultado esperado
+Captura em tempo real
+Reconexão automática
+Sem necessidade de atualizar URL manual
+Dados sendo salvos continuamente
+⚠️ Observações
+A configuração do proxy é feita apenas uma vez
+Após isso, o sistema funciona automaticamente
+Caso queira, posso auxiliar na configuração inicial

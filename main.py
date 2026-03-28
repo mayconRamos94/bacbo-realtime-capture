@@ -7,9 +7,7 @@ from app.capture.ws_client import start_websocket
 from app.storage.database import init_db, close_db
 from app.utils.logger import setup_logger, get_logger
 
-
 from app.config import settings
-
 
 logger = get_logger(__name__)
 
@@ -33,7 +31,7 @@ async def main():
         logger.info("Starting services (WebSocket + API)...")
 
         await asyncio.gather(
-            start_websocket(),
+            start_websocket(),  # 👈 aqui está o segredo
             start_api()
         )
 

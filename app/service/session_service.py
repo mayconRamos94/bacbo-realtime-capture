@@ -1,40 +1,38 @@
-import asyncio
-from playwright.async_api import async_playwright
+import requests
+import websocket
+import json
 
 
-GAME_URL = "https://start.bet.br/live-casino/game/2630915?provider=Evolution&from=%2Flive-casino"
+def get_ws_url():
+    # pega abas abertas no Chrome debug
+    tabs = requests.get("http://localhost:9222/json").json()
 
+    ws_debug_url = None
 
-async def get_ws_url():
-    async with async_playwright() as p:
+    for tab in tabs:
+        if "start.bet" in tab.get("url", ""):
+            ws_debug_url = tab["webSocketDebuggerUrl"]
+            break
 
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir="C:\\Users\\a879950\\AppData\\Local\\Google\\Chrome\\User Data",
-            headless=False
-        )
+    if not ws_debug_url:
+        ws_debug_url = tabs[0]["webSocketDebuggerUrl"]
 
-        page = await context.new_page()
+    ws = websocket.create_connection(ws_debug_url)
 
-        ws_url = None
+    ws.send(json.dumps({
+        "id": 1,
+        "method": "Network.enable"
+    }))
 
-        def handle_ws(ws):
-            nonlocal ws_url
-            if "evo-games.com" in ws.url:
-                ws_url = ws.url
+    print("👀 Capturando WebSocket...")
 
-        page.on("websocket", handle_ws)
+    while True:
+        msg = json.loads(ws.recv())
 
-        await page.goto(GAME_URL)
+        if "method" in msg and msg["method"] == "Network.webSocketCreated":
+            url = msg["params"]["url"]
 
-        # espera capturar
-        for _ in range(30):
-            if ws_url:
-                break
-            await asyncio.sleep(1)
-
-        await context.close()
-
-        if not ws_url:
-            raise Exception("WebSocket URL not found")
-
-        return ws_url
+            if "evo-games.com" in url:
+                print("🔥 WS CAPTURADO:")
+                print(url)
+                return url

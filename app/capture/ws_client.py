@@ -1,9 +1,9 @@
 import asyncio
 import websockets
+import ssl
 
 from app.domain.event_processor import EventProcessor
 from app.utils.logger import get_logger
-from app.config.settings import WS_URL
 
 
 logger = get_logger(__name__)
@@ -12,17 +12,35 @@ RECONNECT_DELAY = 5
 HEARTBEAT_TIMEOUT = 10
 
 
+def get_ws_url():
+    try:
+        with open("ws_url.txt") as f:
+            return f.read().strip()
+    except Exception:
+        return None
+
+
 async def start_websocket():
     processor = EventProcessor()
 
     while True:
         try:
-            logger.info("Connecting to WebSocket...")
+            ws_url = get_ws_url()
+
+            if not ws_url:
+                logger.warning("WS URL not found. Waiting...")
+                await asyncio.sleep(3)
+                continue
+
+            logger.info(f"Connecting to WebSocket: {ws_url}")
+
+            ssl_context = ssl._create_unverified_context()
 
             async with websockets.connect(
-                WS_URL,
+                ws_url,
                 ping_interval=5,
-                ping_timeout=10
+                ping_timeout=10,
+                ssl=ssl_context
             ) as ws:
 
                 logger.info("Connected. Listening for events...")

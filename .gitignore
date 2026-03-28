@@ -1,4 +1,20 @@
+# ambiente
 venv/
 __pycache__/
-.env
 *.pyc
+.env
+
+# runtime / sensível
+ws_url.txt
+chrome-profile/
+
+# testes / debug
+test_*.py
+ws_test.py
+ws_runner.py
+capture_entry.py
+
+# scripts temporários
+scraper_with_session.py
+session_manager.py
+bacbo_ws.py

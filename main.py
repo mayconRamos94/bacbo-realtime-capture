@@ -26,7 +26,7 @@ async def main():
 
     try:
         logger.info("Initializing database...")
-        #await init_db()
+        await init_db()
 
         logger.info("Starting services (WebSocket + API)...")
 
@@ -41,7 +41,7 @@ async def main():
 
     finally:
         logger.info("Shutting down application...")
-        #await close_db()
+        await close_db()
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-RECONNECT_DELAY = 5
+RECONNECT_DELAY = 1  # fallback leve
 HEARTBEAT_TIMEOUT = 10
 
 
@@ -55,15 +55,15 @@ async def start_websocket():
                         await processor.process_event(message)
 
                     except asyncio.TimeoutError:
-                        logger.warning("Heartbeat timeout. Reconnecting...")
-                        break
+                        logger.warning("Heartbeat timeout. Reconnecting immediately...")
+                        break  # 👈 sai instantâneo
 
                     except websockets.ConnectionClosed:
-                        logger.warning("Connection closed. Reconnecting...")
-                        break
+                        logger.warning("Connection closed. Reconnecting immediately...")
+                        break  # 👈 sai instantâneo
 
         except Exception:
             logger.exception("WebSocket connection error")
 
-        logger.info(f"Reconnecting in {RECONNECT_DELAY}s...")
+        # 👇 delay mínimo só pra evitar loop agressivo
         await asyncio.sleep(RECONNECT_DELAY)

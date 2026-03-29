@@ -60,6 +60,13 @@ No terminal, dentro da pasta do projeto:
 
 python -m venv venv
 venv\Scripts\activate
+
+em caso do erro - (venv\Scripts\activate : O arquivo C:... não pode ser carregado porque a execução de scripts foi desabilitada neste sistema. Para obter 
+mais informações, consulte about_Execution_Policies em https://go.microsoft.com/fwlink/?LinkID=135170.)
+execute: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+se nao der erro segue para o passo abaixo
+
 pip install -r requirements.txt
 🚀 3. Configurar variáveis (.env)
 

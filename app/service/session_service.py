@@ -24,7 +24,7 @@ def get_ws_url():
         "method": "Network.enable"
     }))
 
-    print("👀 Capturando WebSocket...")
+    print("Capturando WebSocket...")
 
     while True:
         msg = json.loads(ws.recv())

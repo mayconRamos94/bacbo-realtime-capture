@@ -65,5 +65,5 @@ async def start_websocket():
         except Exception:
             logger.exception("WebSocket connection error")
 
-        # 👇 delay mínimo só pra evitar loop agressivo
+        # delay mínimo só pra evitar loop agressivo
         await asyncio.sleep(RECONNECT_DELAY)

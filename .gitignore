@@ -1,20 +1,45 @@
-# ambiente
-venv/
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*.pyo
+*.pyd
+*.so
 
-# runtime / sensível
+# virtualenv
+venv/
+.env/
+.venv/
+
+.env
+*.env
+
+# arquivos sensíveis do projeto
 ws_url.txt
+auth.json
 chrome-profile/
 
-# testes / debug
-test_*.py
-ws_test.py
-ws_runner.py
-capture_entry.py
 
-# scripts temporários
+*.log
+watchdog.log
+bacbo_poller.log
+
+test_*.py
+*_test.py
+
+# scripts temporários (se não forem parte oficial)
 scraper_with_session.py
 session_manager.py
 bacbo_ws.py
+capture_entry.py
+ws_test.py
+ws_runner.py
+
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+
+dist/
+build/
+*.egg-info/

@@ -1,3 +1,4 @@
+
 __pycache__/
 *.py[cod]
 *.pyo
@@ -8,6 +9,7 @@ __pycache__/
 venv/
 .env/
 .venv/
+
 
 .env
 *.env
@@ -21,6 +23,7 @@ chrome-profile/
 *.log
 watchdog.log
 bacbo_poller.log
+
 
 test_*.py
 *_test.py

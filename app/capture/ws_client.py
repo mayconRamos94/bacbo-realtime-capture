@@ -1,17 +1,10 @@
 """
 ws_client.py — WebSocket poller com auto-recovery real 24h/dia
 
-Fluxo de resiliência:
-  1. Tenta reconectar normalmente até MAX_RECONNECT_ATTEMPTS
-  2. Se passar do limite → entra em modo RECOVERY:
-       - Para de bater cabeça na URL atual
-       - Aguarda o mitmproxy capturar uma URL NOVA (até WAIT_FOR_NEW_WS_TIMEOUT)
-       - Se chegar nova URL → reconecta imediatamente, zera contadores
-       - Se timeout → tenta mais uma vez com a URL atual e reinicia o ciclo
-  3. Backoff exponencial com jitter entre tentativas normais
-  4. URLWatcher em background notifica nova URL instantaneamente
-  5. Health log a cada 5 min confirma que está vivo
-  6. Snapshot detalhado quando entra em recovery
+Correção v4:
+  - Detecção de "conexão fantasma": conecta e cai em <3s sem nenhuma mensagem
+  - Conexão fantasma conta como falha real → avança tentativas → entra em recovery
+  - Só zera contadores se conexão ficou estável (recebeu pelo menos 1 mensagem)
 """
 
 import asyncio
@@ -39,6 +32,7 @@ HEARTBEAT_TIMEOUT       = 45    # segundos sem mensagem → reconectar
 SILENCE_ALARM           = 120   # segundos sem RESULT → logar alerta
 WS_URL_POLL_INTERVAL    = 2     # intervalo do watcher de URL
 HEALTH_LOG_INTERVAL     = 300   # segundos entre health logs
+GHOST_CONNECTION_SECS   = 3     # conexão que cai em menos disso sem msg = fantasma
 
 
 def _mask_url(url: Optional[str]) -> str:
@@ -104,16 +98,11 @@ def _log_snapshot(
 # ─── URLWatcher ──────────────────────────────────────────────────────────────
 
 class URLWatcher:
-    """
-    Monitora ws_url.txt em background.
-    Quando o mitmproxy grava uma URL nova, notifica via asyncio.Event.
-    """
-
     def __init__(self):
         self.current_url: Optional[str] = None
         self.loaded_at:   Optional[float] = None
         self._running = True
-        self.changed  = asyncio.Event()  # setado sempre que URL mudar
+        self.changed  = asyncio.Event()
 
     async def run(self):
         while self._running:
@@ -127,7 +116,7 @@ class URLWatcher:
                     f"{_mask_url(url)}"
                     + (f"  (substituiu: {_mask_url(old)})" if old else "")
                 )
-                self.changed.set()   # acorda quem estiver aguardando
+                self.changed.set()
             await asyncio.sleep(WS_URL_POLL_INTERVAL)
 
     def clear_changed(self):
@@ -140,15 +129,12 @@ class URLWatcher:
 # ─── Recovery ────────────────────────────────────────────────────────────────
 
 async def _recovery_wait(watcher: URLWatcher, bad_url: Optional[str]) -> Optional[str]:
-    """
-    Entra em modo recovery: aguarda nova URL do mitmproxy.
-    Retorna a nova URL se chegar, ou None se timeout.
-    """
     logger.error(
         f"[RECOVERY] {MAX_RECONNECT_ATTEMPTS} falhas consecutivas. "
         f"URL atual provavelmente inválida/expirada.\n"
         f"           Aguardando nova sessão do mitmproxy "
-        f"(timeout: {WAIT_FOR_NEW_WS_TIMEOUT}s)..."
+        f"(timeout: {WAIT_FOR_NEW_WS_TIMEOUT}s)...\n"
+        f"           👉 Abra o Chrome e acesse o jogo para gerar nova URL."
     )
 
     watcher.clear_changed()
@@ -159,7 +145,7 @@ async def _recovery_wait(watcher: URLWatcher, bad_url: Optional[str]) -> Optiona
         if new_url and new_url != bad_url:
             logger.info(
                 f"[RECOVERY] Nova sessão detectada! "
-                f"Reconectando com URL renovada: {_mask_url(new_url)}"
+                f"Reconectando: {_mask_url(new_url)}"
             )
             return new_url
 
@@ -168,12 +154,11 @@ async def _recovery_wait(watcher: URLWatcher, bad_url: Optional[str]) -> Optiona
 
         if remaining <= 0:
             logger.warning(
-                f"[RECOVERY] Timeout de {WAIT_FOR_NEW_WS_TIMEOUT}s atingido "
-                "sem nova URL. Tentando novamente com a URL atual..."
+                f"[RECOVERY] Timeout de {WAIT_FOR_NEW_WS_TIMEOUT}s sem nova URL. "
+                "Tentando novamente com URL atual..."
             )
             return None
 
-        # acorda imediatamente se URL mudar, senão verifica a cada 1s
         try:
             await asyncio.wait_for(
                 asyncio.shield(watcher.changed.wait()),
@@ -187,13 +172,6 @@ async def _recovery_wait(watcher: URLWatcher, bad_url: Optional[str]) -> Optiona
 # ─── Loop principal ───────────────────────────────────────────────────────────
 
 async def start_websocket():
-    """
-    Poller principal — roda 24h sem intervenção humana.
-
-    Estados:
-      NORMAL   → tenta reconectar com backoff até MAX_RECONNECT_ATTEMPTS
-      RECOVERY → para de tentar, aguarda nova URL do mitmproxy
-    """
     processor    = EventProcessor()
     watcher      = URLWatcher()
     uptime_start = time.time()
@@ -206,7 +184,6 @@ async def start_websocket():
 
     logger.info("[SYS] Poller iniciado. Aguardando URL do mitmproxy...")
 
-    # aguarda primeira URL
     while not watcher.current_url:
         logger.info(f"[URL] Nenhuma URL ainda. Aguardando mitmproxy... (poll {WS_URL_POLL_INTERVAL}s)")
         await asyncio.sleep(WS_URL_POLL_INTERVAL)
@@ -223,7 +200,7 @@ async def start_websocket():
             )
             last_health_log = now
 
-        # ── AUTO-RECOVERY: limite de tentativas atingido ──────────────────────
+        # ── AUTO-RECOVERY ─────────────────────────────────────────────────────
         if reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
             _log_snapshot(
                 ws_url=watcher.current_url,
@@ -233,23 +210,18 @@ async def start_websocket():
                 uptime_start=uptime_start,
                 mode="RECOVERY — aguardando nova URL",
             )
-            new_url = await _recovery_wait(watcher, bad_url=watcher.current_url)
-            if new_url:
-                # URL nova chegou — zera tudo e conecta
-                reconnect_attempts = 0
-            else:
-                # timeout — zera tentativas e tenta com URL atual
-                reconnect_attempts = 0
-            continue  # volta ao topo para conectar
+            bad_url = watcher.current_url
+            new_url = await _recovery_wait(watcher, bad_url=bad_url)
+            reconnect_attempts = 0
+            continue
 
-        # ── Backoff exponencial entre tentativas normais ───────────────────────
+        # ── Backoff entre tentativas ──────────────────────────────────────────
         if reconnect_attempts > 0:
             delay = _backoff(reconnect_attempts)
             logger.info(
                 f"[WS] Aguardando {delay:.1f}s antes de reconectar "
                 f"(tentativa {reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS})..."
             )
-            # acorda cedo se nova URL chegar durante o backoff
             watcher.clear_changed()
             try:
                 await asyncio.wait_for(
@@ -263,8 +235,6 @@ async def start_websocket():
                 pass
 
         ws_url = watcher.current_url
-
-        # ── Tentar conectar ───────────────────────────────────────────────────
         ssl_ctx = ssl._create_unverified_context()
 
         try:
@@ -282,23 +252,25 @@ async def start_websocket():
                 max_size=2 ** 23,
             ) as ws:
 
+                connect_time = time.time()
+                received_any_message = False
                 logger.info(f"[WS] Conexão estabelecida ✓ | Uptime: {_fmt_uptime(uptime_start)}")
-                reconnect_attempts = 0   # sucesso — zera contador
                 watcher.clear_changed()
 
                 # ── Loop de recebimento ───────────────────────────────────────
                 while True:
 
-                    # nova URL enquanto conectado → troca sem esperar queda
                     if watcher.changed.is_set():
                         logger.info(
                             "[URL] Nova URL capturada enquanto conectado — "
                             "reconectando para usar sessão mais recente."
                         )
                         watcher.clear_changed()
+                        # só zera se conexão foi estável
+                        if received_any_message:
+                            reconnect_attempts = 0
                         break
 
-                    # alerta de silêncio longo (não força reconexão)
                     if last_result_at and (time.time() - last_result_at) > SILENCE_ALARM:
                         logger.warning(
                             f"[WS] Servidor silencioso há "
@@ -311,6 +283,12 @@ async def start_websocket():
                             ws.recv(),
                             timeout=HEARTBEAT_TIMEOUT,
                         )
+                        # primeira mensagem recebida = conexão estável
+                        if not received_any_message:
+                            received_any_message = True
+                            reconnect_attempts   = 0
+                            logger.info("[WS] Primeira mensagem recebida — conexão estável ✓")
+
                         await processor.process_event(message)
                         last_result_at = time.time()
 
@@ -325,10 +303,19 @@ async def start_websocket():
                     except ConnectionClosed as e:
                         code   = e.rcvd.code   if e.rcvd else "N/A"
                         reason = (e.rcvd.reason or "sem razão") if e.rcvd else "sem razão"
-                        logger.warning(
-                            f"[WS] Conexão fechada — code={code} reason='{reason}' | "
-                            f"Último RESULT: {_fmt_since(last_result_at)}"
-                        )
+                        alive  = time.time() - connect_time
+
+                        if not received_any_message and alive < GHOST_CONNECTION_SECS:
+                            logger.warning(
+                                f"[WS] Conexão fantasma — caiu em {alive:.1f}s sem nenhuma mensagem "
+                                f"(code={code}) | Sessão provavelmente inválida | "
+                                f"Tentativas: {reconnect_attempts + 1}/{MAX_RECONNECT_ATTEMPTS}"
+                            )
+                        else:
+                            logger.warning(
+                                f"[WS] Conexão fechada — code={code} reason='{reason}' | "
+                                f"Último RESULT: {_fmt_since(last_result_at)}"
+                            )
                         reconnect_attempts += 1
                         break
 

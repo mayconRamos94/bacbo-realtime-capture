@@ -8,9 +8,11 @@ com reconexão automática, auto-recovery e estabilidade 24h/dia.
 ## Arquitetura
 
 ```
-Chrome (jogo aberto)
+Chrome (jogo aberto com CDP ativo)
     ↓
 mitmproxy (intercepta WebSocket → salva ws_url.txt)
+    ↓
+auto_refresh.py (renova sessão automaticamente via CDP)
     ↓
 watchdog.py (garante que o processo nunca morre)
     ↓
@@ -29,6 +31,7 @@ API REST (http://localhost:8000)
 - Google Chrome instalado
 - PostgreSQL rodando e acessível
 - mitmproxy instalado (`pip install mitmproxy`)
+- Proxy do Windows configurado em `127.0.0.1:8080`
 
 ---
 
@@ -50,7 +53,7 @@ venv\Scripts\activate
 ### 2. Instalar dependências
 
 ```powershell
-pip install fastapi uvicorn websockets asyncpg aiohttp python-dotenv --trusted-host pypi.org --trusted-host files.pythonhosted.org
+pip install fastapi uvicorn websockets asyncpg aiohttp python-dotenv requests websocket-client --trusted-host pypi.org --trusted-host files.pythonhosted.org
 ```
 
 > O `--trusted-host` é necessário porque o mitmproxy intercepta o SSL do pip.
@@ -80,54 +83,61 @@ http://mitm.it
 - Armazene em **"Autoridades de Certificação Raiz Confiáveis"**
 - Conclua a instalação
 
+### 5. Configurar proxy do Windows (uma única vez)
+
+Vá em **Configurações → Rede e Internet → Proxy** e configure:
+- Usar um servidor proxy: **Ativado**
+- Endereço: `127.0.0.1`
+- Porta: `8080`
+- Clique em **Salvar**
+
 ---
 
 ## Como rodar (uso diário)
 
-Você vai precisar de **3 terminais abertos** simultaneamente.
+Você vai precisar de **4 terminais abertos** simultaneamente.
+
+---
 
 ### Terminal 1 — mitmproxy
 
 ```powershell
+python -m venv venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 venv\Scripts\activate
-mitmproxy -s mitm_script.py --mode upstream:http://SEU_PROXY:PORTA --ssl-insecure
+mitmproxy -s mitm_script.py --ssl-insecure
 ```
 
-> Substitua `SEU_PROXY:PORTA` pelo endereço do seu proxy.
 > O mitmproxy vai capturar automaticamente a URL do WebSocket e salvar em `ws_url.txt`.
 
-### Terminal 2 — Chrome com proxy
+---
 
-Primeiro descubra o caminho exato do Chrome na sua máquina:
+### Terminal 2 — Chrome com CDP
 
-1. Clique na **barra de pesquisa do Windows** e digite `Chrome`
-2. O Google Chrome vai aparecer nos resultados — **clique com o botão direito**
-3. Clique em **"Abrir local do arquivo"**
-4. Na pasta que abrir, **clique com o botão direito no ícone do Chrome**
-5. Clique em **"Propriedades"**
-6. Copie o caminho que aparece no campo **"Destino"**
-   - Exemplo: `C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`
+> **Importante:** o Chrome precisa ser aberto com `--remote-debugging-port=9222` para o auto-refresh funcionar sem abrir janelas novas.
 
-Agora rode no PowerShell com o caminho que você copiou:
+Primeiro, descubra o caminho do Chrome:
+1. Pesquise `Chrome` na barra do Windows
+2. Clique com botão direito → **Abrir local do arquivo**
+3. Clique com botão direito no ícone → **Propriedades**
+4. Copie o caminho do campo **Destino**
+
+Agora abra o Chrome assim (substitua o caminho se necessário):
 
 ```powershell
-Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "--proxy-server=http://127.0.0.1:8080", "--ignore-certificate-errors"
+taskkill /F /IM chrome.exe /T
+Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "--remote-debugging-port=9222"
 ```
 
-> Exemplo real:
-> ```powershell
-> Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "--proxy-server=http://127.0.0.1:8080", "--ignore-certificate-errors"
-> ```
-Aguarde a janela google abrir
-Após abrir o Chrome:
-1. Acesse o site do cassino
-2. Faça login
-3. Abra o jogo **Bac Bo**
-4. O mitmproxy captura a URL automaticamente → `ws_url.txt` é criado
+> O `taskkill` garante que não há processos antigos do Chrome que bloqueiem o CDP.
+> Após abrir o Chrome, acesse o site, faça login e abra o jogo **Bac Bo**.
+
+---
 
 ### Terminal 3 — Poller (watchdog)
 
 ```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 venv\Scripts\activate
 python watchdog.py
 ```
@@ -137,19 +147,46 @@ python watchdog.py
 
 ---
 
+### Terminal 4 — Auto-refresh de sessão
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+venv\Scripts\activate
+python auto_refresh.py
+```
+
+> Monitora o token da sessão e recarrega a aba do jogo automaticamente via CDP
+> quando o token estiver próximo de expirar — sem abrir janelas novas.
+
+---
+
 ## Verificar que está funcionando
 
-Nos primeiros segundos você deve ver no Terminal 3:
+### Terminal 3 (poller) deve mostrar:
 
 ```
 [URL] Primeira URL capturada: wss://atlasbr.evo-games.com/...
 [WS] Conectando (tentativa 1/5) → wss://atlasbr.evo-games.com/...
 [WS] Conexão estabelecida ✓
-[RESULT] BANKER | P:3 vs B:7
+[WS] Primeira mensagem recebida — conexão estável ✓
+RESULT -> Banker | P:5 vs B:7
 Event saved successfully
 ```
 
-### API disponível
+### Terminal 4 (auto-refresh) deve mostrar:
+
+```
+[AUTO-REFRESH] CDP ativo na porta 9222 ✓
+[AUTO-REFRESH] Primeiro token detectado ✓
+...
+[AUTO-REFRESH] Aba do jogo encontrada — recarregando via CDP...
+[AUTO-REFRESH] Aba recarregada com sucesso ✓
+[AUTO-REFRESH] Novo token detectado (anterior tinha 420s) ✓
+```
+
+---
+
+## API disponível
 
 | Endpoint | Descrição |
 |----------|-----------|
@@ -159,15 +196,13 @@ Event saved successfully
 
 ---
 
-## Monitorar em tempo real
-
-Em um quarto terminal, para acompanhar o log:
+## Monitorar logs em tempo real
 
 ```powershell
 Get-Content bacbo_poller.log -Wait -Tail 50
 ```
 
-A cada 5 minutos aparece o health log confirmando que está vivo:
+A cada 5 minutos aparece o health log:
 
 ```
 [HEALTH] Uptime: 01h23m45s | Último RESULT: 12s atrás | Tentativas: 0/5
@@ -185,15 +220,12 @@ Se uma URL nova chegar do mitmproxy durante o backoff, acorda imediatamente.
 
 ### Modo RECOVERY (após 5 falhas consecutivas)
 Para de tentar com a URL atual e aguarda o mitmproxy capturar uma sessão nova (até 60s).
-- Se nova URL chegar → reconecta imediatamente, zera contadores
-- Se timeout de 60s → tenta mais uma vez com a URL atual e reinicia o ciclo
 
 ```
 CONECTA
   → falha → tentativa 1/5
   → falha → tentativa 2/5
-  → falha → tentativa 3/5
-  → falha → tentativa 4/5
+  → ...
   → falha → tentativa 5/5
   → RECOVERY: aguarda nova URL (60s)
       → URL nova chegou → CONECTA (zera contadores)
@@ -202,15 +234,17 @@ CONECTA
 
 ---
 
-## Chrome: abrir ou fechar?
+## Auto-refresh de sessão
 
-| Situação | Comportamento |
-|----------|---------------|
-| Chrome **aberto** em background | 24h sem intervenção ✅ |
-| Chrome **fechado** | Funciona até a sessão expirar, depois precisa abrir de novo ⚠️ |
+O `auto_refresh.py` usa o Chrome DevTools Protocol (CDP) para renovar a sessão automaticamente:
 
-**Recomendação:** deixe o Chrome aberto em segundo plano com a aba do jogo.
-Assim quando a sessão renovar, o mitmproxy captura automaticamente sem intervenção.
+| Situação | Ação |
+|----------|------|
+| Achou aba do jogo | Recarrega ela (`Page.reload`) |
+| Não achou aba do jogo, CDP ativo | Navega aba existente para o jogo |
+| CDP não disponível | Abre nova janela como fallback |
+
+> O tempo padrão de renovação é **7 minutos**. Para ajustar, edite `TOKEN_MAX_AGE_SECONDS` no `auto_refresh.py`.
 
 ---
 
@@ -220,6 +254,7 @@ Assim quando a sessão renovar, o mitmproxy captura automaticamente sem interven
 |---------|-----------|
 | `bacbo_poller.log` | Log principal do poller (10MB × 5 arquivos rotativos) |
 | `watchdog.log` | Log do watchdog (reinicializações do processo) |
+| `auto_refresh.log` | Log do auto-refresh de sessão |
 
 ---
 
@@ -229,11 +264,13 @@ Assim quando a sessão renovar, o mitmproxy captura automaticamente sem interven
 bacbo-improved/
 ├── main.py                     # Entry point
 ├── watchdog.py                 # Guarda-cão: reinicia o processo se morrer
+├── auto_refresh.py             # Renovação automática de sessão via CDP
 ├── mitm_script.py              # Script do mitmproxy (captura WS URL)
 ├── .env                        # Variáveis de ambiente (criar manualmente)
 ├── ws_url.txt                  # Gerado automaticamente pelo mitmproxy
 ├── bacbo_poller.log            # Gerado automaticamente
 ├── watchdog.log                # Gerado automaticamente
+├── auto_refresh.log            # Gerado automaticamente
 └── app/
     ├── api/
     │   └── routes.py           # Endpoints REST
